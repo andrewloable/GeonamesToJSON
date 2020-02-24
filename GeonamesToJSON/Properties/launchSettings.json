@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "GeonamesToJSON": {
+      "commandName": "Project",
+      "commandLineArgs": "-admin1=\"G:\\\\geonames\\\\admin1CodesASCII.txt\" -admin2=\"G:\\\\geonames\\\\admin2Codes.txt\" -countries=\"G:\\\\geonames\\\\countryInfo.txt\" -input=\"G:\\\\geonames\\\\PH.txt\" -output=\"G:\\\\geonames\\\\output.txt\" -feature=\"G:\\\\geonames\\\\featureCodes_en.txt\" -filter=P.PPL,P.PPLA,P.PPLA2,P.PPLA3,P.PPLA4,P.PPLA5,P.PPLC -type=full-structured"
+    }
+  }
+}

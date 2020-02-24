@@ -1,0 +1,7 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/GeonamesToJSON/.vs/GeonamesToJSON/v16/Server/sqlite3
+/GeonamesToJSON/bin/Debug/netcoreapp3.1
+/GeonamesToJSON/obj
