@@ -29,5 +29,21 @@ namespace GeonamesToJSON
         public string? windowsTimezone { get; set; }
         public string[]? neighborCountries { get; set; }
         public DateTime? dateModified { get; set; }
+#nullable disable
+    }
+
+    public class geonameStructured
+    {
+        public string countryCode { get; set; }
+        public string admin1Code { get; set; }
+        public string admin2Code { get; set; }
+        public string tempFilename { get; set; }
+        public string key
+        {
+            get
+            {
+                return $"{countryCode}-{admin1Code}-{admin2Code}";
+            }
+        }
     }
 }
