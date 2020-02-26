@@ -45,5 +45,6 @@ namespace GeonamesToJSON
                 return $"{countryCode}-{admin1Code}-{admin2Code}";
             }
         }
+        public object filelock = new object();
     }
 }

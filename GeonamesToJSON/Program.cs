@@ -95,6 +95,7 @@ namespace GeonamesToJSON
             Dictionary<string, List<string>> admin1codes,
             Dictionary<string, List<string>> admin2codes)
         {
+            Console.WriteLine("Start GenerateFullStructuredOutput");
             // check input file if it exists
             if (!File.Exists(input))
             {
@@ -113,6 +114,8 @@ namespace GeonamesToJSON
             {
                 using StreamReader sr = new StreamReader(input);
                 using StreamWriter sw = new StreamWriter(output);
+                var semaphore = new Semaphore(1000, 1000);
+                object filelock = new object();
 
                 string inputLine = string.Empty;
                 var options = new JsonSerializerOptions()
@@ -120,99 +123,163 @@ namespace GeonamesToJSON
                     IgnoreNullValues = true
                 };
                 var tracker = new Dictionary<string, geonameStructured>();
-
+                var tasks = new List<Task>();
                 while ((inputLine = sr.ReadLine()) != null)
                 {
+                    semaphore.WaitOne();                    
                     var s = inputLine.Split(new char[] { '\t' });
-                    var geo = new geonameFlat();
-                    bool isNewTempFile = false;
-
-                    // check if feature is included in filters
-                    geo.feature = $"{s[6]}.{s[7]}";
-                    if (filters.FirstOrDefault(r => r.Equals(geo.feature, StringComparison.OrdinalIgnoreCase)) == null)
+                    Console.WriteLine("Thread: GeonameID: " + s[0]);
+                    var handle = new EventWaitHandle(false, EventResetMode.ManualReset);
+                    var task = Task.Run(action: () =>
                     {
-                        continue;
-                    }
+                        Console.WriteLine("Processing GeonameID: " + s[0]);
+                        var geo = new geonameFlat();
+                        bool isNewTempFile = false;
 
-                    geo.countryCode = s[8];
-                    var admin1code = $"{geo.countryCode}.{s[10]}";
-                    var admin2code = $"{admin1code}.{s[11]}";
-
-                    geonameStructured geostruct = null;
-                    var key = $"{geo.countryCode}-{admin1code}-{admin2code}";
-                    if (!tracker.TryGetValue(key, out geostruct))
-                    {
-                        geostruct = new geonameStructured()
+                        // check if feature is included in filters
+                        geo.feature = $"{s[6]}.{s[7]}";
+                        if (filters.FirstOrDefault(r => r.Equals(geo.feature, StringComparison.OrdinalIgnoreCase)) == null)
                         {
-                            countryCode = geo.countryCode,
-                            admin1Code = admin1code,
-                            admin2Code = admin2code,
-                            tempFilename = Path.GetTempFileName()
-                        };
-                        isNewTempFile = true;
-                        File.WriteAllText(geostruct.tempFilename, "[");
-                        tracker.Add(geostruct.key, geostruct);
-                    }
+                            return;
+                        }
 
-                    if (long.TryParse(s[0], out long geoid))
-                    {
-                        geo.geonameId = geoid;
-                    }
-                    geo.name = s[1].Trim();
-                    geo.asciiName = s[2].Trim();
-                    var altNames = s[3].Split(new char[] { ',' });
-                    geo.alternateNames = string.IsNullOrWhiteSpace(altNames[0]) ? null : altNames;
-                    if (decimal.TryParse(s[4], out decimal lat))
-                    {
-                        geo.latitude = lat;
-                    }
-                    if (decimal.TryParse(s[5], out decimal lng))
-                    {
-                        geo.longitude = lng;
-                    }
+                        geo.countryCode = s[8];
+                        var admin1code = $"{geo.countryCode}.{s[10]}";
+                        var admin2code = $"{admin1code}.{s[11]}";
 
-                    //if (countries.TryGetValue(geo.countryCode, out List<string> ctry))
-                    //{
-                    //    geo.countryCodeISO3 = ctry[0];
-                    //    geo.country = ctry[3];
-                    //    geo.continent = ctry[7];
-                    //    geo.tld = ctry[8];
-                    //    geo.currencyCode = ctry[9];
-                    //    geo.currency = ctry[10];
-                    //    var langs = ctry[14].Split(new char[] { ',' });
-                    //    geo.languages = string.IsNullOrWhiteSpace(langs[0]) ? null : langs;
-                    //    var neighbors = ctry[16].Split(new char[] { ',' });
-                    //    geo.neighborCountries = string.IsNullOrWhiteSpace(neighbors[0]) ? null : neighbors;
-                    //}
+                        geonameStructured geostruct = null;
+                        var key = $"{geo.countryCode}-{admin1code}-{admin2code}";
+                        lock (filelock)
+                        {
+                            if (!tracker.TryGetValue(key, out geostruct))
+                            {
+                                geostruct = new geonameStructured()
+                                {
+                                    countryCode = geo.countryCode,
+                                    admin1Code = admin1code,
+                                    admin2Code = admin2code,
+                                    tempFilename = Path.GetTempFileName()
+                                };
+                                isNewTempFile = true;
+                                File.WriteAllText(geostruct.tempFilename, "[");
+                                tracker.Add(geostruct.key, geostruct);
+                            }
+                        }
 
-                    //if (admin1codes.TryGetValue(admin1code, out List<string> a1))
-                    //{
-                    //    geo.admin1 = a1[0].Trim();
-                    //}
+                        if (long.TryParse(s[0], out long geoid))
+                        {
+                            geo.geonameId = geoid;
+                        }
+                        geo.name = s[1].Trim();
+                        geo.asciiName = s[2].Trim();
+                        var altNames = s[3].Split(new char[] { ',' });
+                        geo.alternateNames = string.IsNullOrWhiteSpace(altNames[0]) ? null : altNames;
+                        if (decimal.TryParse(s[4], out decimal lat))
+                        {
+                            geo.latitude = lat;
+                        }
+                        if (decimal.TryParse(s[5], out decimal lng))
+                        {
+                            geo.longitude = lng;
+                        }
 
-                    //if (admin2codes.TryGetValue(admin2code, out List<string> a2))
-                    //{
-                    //    geo.admin2 = a2[0].Trim();
-                    //}
+                        //if (countries.TryGetValue(geo.countryCode, out List<string> ctry))
+                        //{
+                        //    geo.countryCodeISO3 = ctry[0];
+                        //    geo.country = ctry[3];
+                        //    geo.continent = ctry[7];
+                        //    geo.tld = ctry[8];
+                        //    geo.currencyCode = ctry[9];
+                        //    geo.currency = ctry[10];
+                        //    var langs = ctry[14].Split(new char[] { ',' });
+                        //    geo.languages = string.IsNullOrWhiteSpace(langs[0]) ? null : langs;
+                        //    var neighbors = ctry[16].Split(new char[] { ',' });
+                        //    geo.neighborCountries = string.IsNullOrWhiteSpace(neighbors[0]) ? null : neighbors;
+                        //}
 
-                    geo.timezone = s[17];
-                    if (!string.IsNullOrWhiteSpace(geo.timezone))
-                    {
-                        geo.windowsTimezone = TZConvert.IanaToWindows(geo.timezone);
-                    }
-                    geo.dateModified = DateTime.Parse(s[18]);
+                        //if (admin1codes.TryGetValue(admin1code, out List<string> a1))
+                        //{
+                        //    geo.admin1 = a1[0].Trim();
+                        //}
 
-                    if (!isNewTempFile)
-                    {
-                        File.AppendAllText(geostruct.tempFilename, ",");
-                    }
-                    File.AppendAllText(geostruct.tempFilename, JsonSerializer.Serialize(geo, options));
+                        //if (admin2codes.TryGetValue(admin2code, out List<string> a2))
+                        //{
+                        //    geo.admin2 = a2[0].Trim();
+                        //}
+
+                        geo.timezone = s[17];
+                        if (!string.IsNullOrWhiteSpace(geo.timezone))
+                        {
+                            geo.windowsTimezone = TZConvert.IanaToWindows(geo.timezone);
+                        }
+                        geo.dateModified = DateTime.Parse(s[18]);
+
+                        lock (geostruct.filelock)
+                        {
+                            if (!isNewTempFile)
+                            {
+                                File.AppendAllText(geostruct.tempFilename, ",");
+                            }
+                            File.AppendAllText(geostruct.tempFilename, JsonSerializer.Serialize(geo, options));
+                        }
+                    });
+                    tasks.Add(task);
+                    semaphore.Release();
+                    Console.WriteLine("Done GeonameID: " + s[0]);
                 }
+                Console.WriteLine("Waiting Tasks");
+                Task.WaitAll(tasks.ToArray());
                 // close array
                 foreach (var t in tracker)
                 {
                     File.AppendAllText(t.Value.tempFilename, "]");
                 }
+                Console.WriteLine("Closing Array in Files");
+
+                // flatten tracker
+                List<geonameStructured> flattracker = new List<geonameStructured>();
+                foreach(var f in tracker)
+                {
+                    flattracker.Add(f.Value);
+                }
+                Console.WriteLine("Flatten Tracker");
+
+                // Write output
+                File.AppendAllText(output, "[");
+                var ctrys = flattracker.GroupBy(r => r.countryCode).Select(r => r.First());
+                bool isFirstCountry = true;
+                foreach(var ctry in ctrys)
+                {
+                    if (isFirstCountry) File.AppendAllText(output, ",");
+                    isFirstCountry = false;
+                    File.AppendAllText(output, $"\"{ctry.countryCode}\":");
+                    var admin1s = flattracker.Where(r => r.countryCode.Equals(ctry.countryCode, StringComparison.OrdinalIgnoreCase)).GroupBy(r => r.admin1Code).Select(r => r.First());
+                    bool isFirstAdmin1 = true;
+                    foreach(var a1 in admin1s)
+                    {
+                        if (isFirstAdmin1) File.AppendAllText(output, ",");
+                        isFirstAdmin1 = false;
+                        File.AppendAllText(output, $"\"{a1.admin1Code}\":");
+                        var admin2s = flattracker.Where(r => r.admin1Code.Equals(a1.admin1Code, StringComparison.OrdinalIgnoreCase)).GroupBy(r => r.admin2Code).Select(r => r.First());
+                        bool isFirstAdmin2 = true;
+                        foreach(var a2 in admin2s)
+                        {
+                            if (isFirstAdmin2) File.AppendAllText(output, ",");
+                            isFirstAdmin2 = false;
+                            var files = flattracker.Where(r => r.admin2Code.Equals(a2.admin2Code, StringComparison.OrdinalIgnoreCase));
+                            bool isFirstFile = true;
+                            foreach(var f in files)
+                            {
+                                var content = File.ReadAllText(f.tempFilename);
+                                if (!isFirstFile) File.AppendAllText(output, ",");
+                                isFirstFile = false;
+                                File.AppendAllText(output, content);
+                            }
+                        }
+                    }
+                }
+                File.AppendAllText(output, "]");
+                Console.WriteLine("Output Done");
                 // delete tracker temp files
                 foreach (var t in tracker)
                 {
@@ -221,6 +288,7 @@ namespace GeonamesToJSON
                         File.Delete(t.Value.tempFilename);
                     }
                 }
+                Console.WriteLine("Delete Temp Files");
             }
             catch (IOException e)
             {
