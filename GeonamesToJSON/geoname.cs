@@ -29,15 +29,25 @@ namespace GeonamesToJSON
         public string? windowsTimezone { get; set; }
         public string[]? neighborCountries { get; set; }
         public DateTime? dateModified { get; set; }
-#nullable disable
     }
 
     public class geonameStructured
     {
-        public string countryCode { get; set; }
-        public string admin1Code { get; set; }
-        public string admin2Code { get; set; }
-        public string tempFilename { get; set; }
+        public string? countryCode { get; set; }
+        public string? countryCodeISO3 { get; set; }
+        public string? country { get; set; }
+        public string? continent { get; set; }
+        public string? tld { get; set; }
+        public string? currencyCode { get; set; }
+        public string? currency { get; set; }
+        public string[]? languages { get; set; }
+        public string? admin1Code { get; set; }
+        public string? admin1 { get; set; }
+        public string? admin2Code { get; set; }
+        public string? admin2 { get; set; }
+        public string[]? neighborCountries { get; set; }
+        public string? tempFilename { get; set; }
+        public bool isNewTempFile { get; set; }
         public string key
         {
             get
@@ -47,4 +57,5 @@ namespace GeonamesToJSON
         }
         public object filelock = new object();
     }
+#nullable disable
 }

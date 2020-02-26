@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -128,13 +129,11 @@ namespace GeonamesToJSON
                 {
                     semaphore.WaitOne();                    
                     var s = inputLine.Split(new char[] { '\t' });
-                    Console.WriteLine("Thread: GeonameID: " + s[0]);
                     var handle = new EventWaitHandle(false, EventResetMode.ManualReset);
                     var task = Task.Run(action: () =>
                     {
                         Console.WriteLine("Processing GeonameID: " + s[0]);
                         var geo = new geonameFlat();
-                        bool isNewTempFile = false;
 
                         // check if feature is included in filters
                         geo.feature = $"{s[6]}.{s[7]}";
@@ -158,13 +157,36 @@ namespace GeonamesToJSON
                                     countryCode = geo.countryCode,
                                     admin1Code = admin1code,
                                     admin2Code = admin2code,
-                                    tempFilename = Path.GetTempFileName()
+                                    tempFilename = Path.GetTempFileName(),
+                                    isNewTempFile = true
                                 };
-                                isNewTempFile = true;
-                                File.WriteAllText(geostruct.tempFilename, "[");
+                                if (countries.TryGetValue(geo.countryCode, out List<string> ctry))
+                                {
+                                    geostruct.countryCodeISO3 = ctry[0];
+                                    geostruct.country = ctry[3];
+                                    geostruct.continent = ctry[7];
+                                    geostruct.tld = ctry[8];
+                                    geostruct.currencyCode = ctry[9];
+                                    geostruct.currency = ctry[10];
+                                    geostruct.currency = ctry[10];
+                                    var langs = ctry[14].Split(new char[] { ',' });
+                                    geostruct.languages = string.IsNullOrWhiteSpace(langs[0]) ? null : langs;
+                                    var neighbors = ctry[16].Split(new char[] { ',' });
+                                    geostruct.neighborCountries = string.IsNullOrWhiteSpace(neighbors[0]) ? null : neighbors;
+                                }
+                                if (admin1codes.TryGetValue(admin1code, out List<string> a1))
+                                {
+                                    geostruct.admin1 = a1[0] ?? "None"; 
+                                }
+
+                                if (admin2codes.TryGetValue(admin2code, out List<string> a2))
+                                {
+                                    geostruct.admin2 = a2[0] ?? "None";
+                                }
                                 tracker.Add(geostruct.key, geostruct);
+                                File.WriteAllText(geostruct.tempFilename, "[");
                             }
-                        }
+                        }                        
 
                         if (long.TryParse(s[0], out long geoid))
                         {
@@ -216,69 +238,81 @@ namespace GeonamesToJSON
 
                         lock (geostruct.filelock)
                         {
-                            if (!isNewTempFile)
+                            if (!geostruct.isNewTempFile)
                             {
                                 File.AppendAllText(geostruct.tempFilename, ",");
                             }
+                            geostruct.isNewTempFile = false;
                             File.AppendAllText(geostruct.tempFilename, JsonSerializer.Serialize(geo, options));
                         }
                     });
                     tasks.Add(task);
                     semaphore.Release();
-                    Console.WriteLine("Done GeonameID: " + s[0]);
+                    Console.WriteLine("--- Done GeonameID: " + s[0]);
                 }
                 Console.WriteLine("Waiting Tasks");
                 Task.WaitAll(tasks.ToArray());
                 // close array
+                Console.WriteLine("Closing Array in Files");
                 foreach (var t in tracker)
                 {
                     File.AppendAllText(t.Value.tempFilename, "]");
                 }
-                Console.WriteLine("Closing Array in Files");
-
+                Console.WriteLine("Flatten Tracker");
                 // flatten tracker
                 List<geonameStructured> flattracker = new List<geonameStructured>();
                 foreach(var f in tracker)
                 {
                     flattracker.Add(f.Value);
                 }
-                Console.WriteLine("Flatten Tracker");
-
                 // Write output
-                File.AppendAllText(output, "[");
+                sw.Write("[{");
                 var ctrys = flattracker.GroupBy(r => r.countryCode).Select(r => r.First());
                 bool isFirstCountry = true;
                 foreach(var ctry in ctrys)
                 {
-                    if (isFirstCountry) File.AppendAllText(output, ",");
+                    if (!isFirstCountry) sw.Write(",");
                     isFirstCountry = false;
-                    File.AppendAllText(output, $"\"{ctry.countryCode}\":");
+                    sw.Write($"\"{ctry.country ?? "None"}\":{{");
+                    sw.Write($"\"CountryCode\":\"{ctry.countryCode}\",");
+                    sw.Write($"\"CountryISO\":\"{ctry.countryCodeISO3}\",");
+                    sw.Write($"\"Continent\":\"{ctry.continent}\",");
+                    sw.Write($"\"Currency\":\"{ctry.currency}\",");
+                    sw.Write($"\"CurrencyCode\":\"{ctry.currencyCode}\",");
+                    sw.Write($"\"Languages\":{JsonSerializer.Serialize(ctry.languages, options)},");
+                    sw.Write($"\"Neighbors\":{JsonSerializer.Serialize(ctry.neighborCountries, options)},");
+                    sw.Write($"\"TLD\":\"{ctry.tld}\",");
+                    sw.Write("\"Regions\":[{");
                     var admin1s = flattracker.Where(r => r.countryCode.Equals(ctry.countryCode, StringComparison.OrdinalIgnoreCase)).GroupBy(r => r.admin1Code).Select(r => r.First());
                     bool isFirstAdmin1 = true;
                     foreach(var a1 in admin1s)
                     {
-                        if (isFirstAdmin1) File.AppendAllText(output, ",");
+                        if (!isFirstAdmin1) sw.Write(",");
                         isFirstAdmin1 = false;
-                        File.AppendAllText(output, $"\"{a1.admin1Code}\":");
+                        sw.Write($"\"{a1.admin1 ?? "None"}\":{{");
                         var admin2s = flattracker.Where(r => r.admin1Code.Equals(a1.admin1Code, StringComparison.OrdinalIgnoreCase)).GroupBy(r => r.admin2Code).Select(r => r.First());
                         bool isFirstAdmin2 = true;
                         foreach(var a2 in admin2s)
                         {
-                            if (isFirstAdmin2) File.AppendAllText(output, ",");
+                            if (!isFirstAdmin2) sw.Write(",");
                             isFirstAdmin2 = false;
+                            sw.Write($"\"{a2.admin2 ?? "None"}\":");
                             var files = flattracker.Where(r => r.admin2Code.Equals(a2.admin2Code, StringComparison.OrdinalIgnoreCase));
                             bool isFirstFile = true;
                             foreach(var f in files)
                             {
                                 var content = File.ReadAllText(f.tempFilename);
-                                if (!isFirstFile) File.AppendAllText(output, ",");
+                                if (!isFirstFile) sw.Write(",");
                                 isFirstFile = false;
-                                File.AppendAllText(output, content);
+                                sw.Write(content);
                             }
                         }
+                        sw.Write("}");
                     }
+                    sw.Write("}]}");
                 }
-                File.AppendAllText(output, "]");
+                sw.Write("}]");
+                sw.Flush();
                 Console.WriteLine("Output Done");
                 // delete tracker temp files
                 foreach (var t in tracker)
